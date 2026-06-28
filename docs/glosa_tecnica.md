@@ -257,7 +257,7 @@ Es la dirección y magnitud en que hay que mover cada peso para que el loss baje
 
 ### CrossEntropyLoss: la función de pérdida
 
-Combina dos operaciones: **Softmax** (convierte scores en probabilidades) + **NLLLoss** (penaliza con logaritmo negativo).
+Combina dos operaciones: **LogSoftmax** (convierte scores en log-probabilidades) + **NLLLoss** (penaliza).
 
 Fórmula: `L = -log(P(clase_correcta))`
 
@@ -275,8 +275,8 @@ Ejemplo: si la red asigna 5% de probabilidad a "Tizón" cuando la foto es Tizón
 
 | Modo | Cuándo | Efecto |
 |---|---|---|
-| `model.train()` | Durante entrenamiento | Activa Dropout, BatchNorm usa stats del batch |
-| `model.eval()` | Durante inferencia | Desactiva Dropout, predicciones deterministas |
+| `model.train()` | Durante entrenamiento | Habilita Dropout y BatchNorm actualiza stats (si la red los usara) |
+| `model.eval()` | Durante inferencia | Desactiva Dropout, BatchNorm usa stats globales |
 
 ### torch.no_grad()
 
@@ -351,23 +351,23 @@ PIL [H, W, 3]  →  Resize  →  PIL [64, 64, 3]
 
 | Parámetro | Valor | Archivo | Justificación |
 |---|---|---|---|
-| `IMG_SIZE` | `64` | `entrenar_cnn.py:27` | Compromiso CPU/resolución. 224 requiere GPU. |
-| `BATCH_SIZE` | `32` | `entrenar_cnn.py:28` | Estándar empírico. Menor=ruidoso, mayor=más RAM. |
-| `EPOCHS` | `10` | `entrenar_cnn.py:29` | ~630 actualizaciones. Conservador anti-overfitting. |
-| `lr` | `0.001` | `entrenar_cnn.py:108` | Default Adam (Kingma & Ba, 2014). |
+| `IMG_SIZE` | `64` | `entrenar_cnn.py:57` | Compromiso CPU/resolución. 224 requiere GPU. |
+| `BATCH_SIZE` | `32` | `entrenar_cnn.py:64` | Estándar empírico. Menor=ruidoso, mayor=más RAM. |
+| `EPOCHS` | `10` | `entrenar_cnn.py:72` | ~630 actualizaciones. Conservador anti-overfitting. |
+| `lr` | `0.001` | `entrenar_cnn.py:307` | Default Adam (Kingma & Ba, 2014). |
 | `Normalize μ,σ` | `(0.5,0.5,0.5)` | ambos archivos | Reescala [0,1]→[-1,1]. Genérico. |
 
 ### Hiperparámetros de Arquitectura
 
 | Parámetro | Valor | Archivo | Justificación |
 |---|---|---|---|
-| `conv1 out_channels` | `16` | `:78` | Features simples. Estándar para dataset pequeño. |
-| `conv2 out_channels` | `32` | `:83` | Patrón VGG: duplicar filtros por profundidad. |
-| `kernel_size` | `3×3` | `:78,83` | Mínimo efectivo. Menos params que 5×5. |
-| `padding` | `1` | `:78,83` | Same padding: mantiene dims espaciales. |
-| `MaxPool stride` | `2` | `:80,85` | Reduce 50%/bloque. Invarianza traslacional. |
-| `fc1` | `8192→64` | `:89` | Cuello de botella. 93% de todos los params. |
-| `fc2` | `64→3` | `:91` | 3 logits = 3 clases. Sin activación. |
+| `conv1 out_channels` | `16` | `:185` | Features simples. Estándar para dataset pequeño. |
+| `conv2 out_channels` | `32` | `:206` | Patrón VGG: duplicar filtros por profundidad. |
+| `kernel_size` | `3×3` | `:185,206` | Mínimo efectivo. Menos params que 5×5. |
+| `padding` | `1` | `:185,206` | Same padding: mantiene dims espaciales. |
+| `MaxPool stride` | `2` | `:199,209` | Reduce 50%/bloque. Invarianza traslacional. |
+| `fc1` | `8192→64` | `:221` | Cuello de botella. 99% de todos los params. |
+| `fc2` | `64→3` | `:229` | 3 logits = 3 clases. Sin activación. |
 
 ### Parámetros Totales
 
