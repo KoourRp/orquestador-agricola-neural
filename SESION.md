@@ -47,12 +47,16 @@ uvicorn src.api_vision:app --port 8001
 ```
 Cuando aparezca `✅ Modelo PyTorch cargado en memoria desde 'modelo_vision.pth'`, está lista.
 
-### 3. Levantar ngrok (necesario para el Telegram Trigger)
-El Telegram Trigger requiere que n8n sea accesible desde internet. En v2.19.5 el `--tunnel` incorporado no funciona, usar ngrok:
+### 3. Exponer FastAPI con ngrok (necesario si n8n corre en la nube)
+Si n8n está en cloud y FastAPI corre local, ngrok expone el puerto 8001 para que n8n pueda llamarlo:
 ```bash
-ngrok http 5678
+ngrok http 8001
+# o con dominio estático (recomendado):
+ngrok http --domain=tu-subdominio.ngrok-free.app 8001
 ```
-Esto genera una URL pública (ej. `https://abc123.ngrok-free.app`). n8n la detecta automáticamente al activar el workflow de Telegram.
+Actualizar la URL del nodo "CNN Inferencia (FastAPI)" en n8n con la URL que entrega ngrok.
+
+Si n8n también corre local, no se necesita ngrok para FastAPI.
 
 ### 4. n8n ya está corriendo
 Los flujos `Demo Final Orquestador` y `Orquestador Agrícola - Bot Telegram (@FitoScanAIBot)` están importados en n8n local (`localhost:5678`).
@@ -145,16 +149,41 @@ Se generó un grafo interactivo del proyecto con `graphify`. Abre `graphify-out/
 
 ---
 
-## Conexión MCP con n8n local
+## Arquitectura de despliegue (estado post-disertación)
 
-Desde Claude Code se puede ver y disparar el flujo directamente vía MCP (sin abrir la UI de n8n).
+Una vez migrado a producción, el sistema opera en dos piezas:
 
-- **Workflow ID:** `eiHrG2muhzHk01Ib` = "Demo Final Orquestador (CNN + Clima + LLM)"
-- **Qué puede hacer el MCP:** listar workflows, leer webhooks del flujo, disparar webhooks (`call_webhook_post` / `call_webhook_get`)
-- **Qué NO puede:** editar nodos (eso sigue siendo manual en la UI)
-- **Para iterar rápido:** conviene activar `n8n_workflow_final.json` (tiene webhook, no Form Trigger) y dispararlo con `call_webhook_post`
+### n8n — en la nube
+El workflow de Telegram corre en la instancia cloud del equipo. Al tener URL pública propia, Telegram registra el webhook directamente sin necesidad de ngrok. El bot responde mientras la instancia esté activa.
 
-**Migración pendiente:** el compañero contrató 14 días gratis de n8n cloud. Una vez lista la disertación, migrar el flujo ahí para que quede autofuncionando sin depender del PC local.
+### FastAPI (CNN) — en el PC del equipo, expuesto con ngrok
+La inferencia corre local por el peso de las dependencias. Para que n8n cloud pueda llamarla:
+
+```bash
+# Terminal 1 — levantar la API
+uvicorn src.api_vision:app --port 8001
+
+# Terminal 2 — exponer el puerto al exterior
+ngrok http 8001
+```
+
+El nodo "CNN Inferencia (FastAPI)" en n8n debe apuntar a la URL pública que entrega ngrok (`https://xxx.ngrok-free.app/predecir_muestra`).
+
+**Tip:** ngrok permite un dominio estático gratuito para no tener que actualizar la URL del nodo cada vez que se reinicia:
+```bash
+ngrok http --domain=tu-subdominio.ngrok-free.app 8001
+```
+El subdominio se reserva una vez en el dashboard de ngrok y queda fijo.
+
+### Requisitos en el PC que corre FastAPI
+- Python con las dependencias instaladas (`pip install fastapi uvicorn torch torchvision pillow python-multipart`)
+- ngrok instalado y autenticado con cuenta gratuita
+- El repo clonado con `modelo_vision.pth` presente
+
+### Conexión MCP con n8n local (referencia de desarrollo)
+Durante el desarrollo se usó MCP para inspeccionar y disparar workflows sin abrir la UI.
+- **Qué puede hacer:** listar workflows, leer webhooks, disparar ejecuciones vía webhook
+- **Qué NO puede:** editar configuración de nodos (eso es manual en la UI)
 
 ---
 
