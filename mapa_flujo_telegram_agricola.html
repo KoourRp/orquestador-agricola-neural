@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapa interactivo - Flujo Telegram Agricola</title>
+  <style>
+    :root {
+      --bg: #f6f8f5;
+      --panel: #ffffff;
+      --ink: #17231b;
+      --muted: #5b6a60;
+      --line: #c9d7ca;
+      --green: #2f7d4f;
+      --blue: #2477b7;
+      --amber: #b7791f;
+      --red: #b84848;
+      --shadow: 0 16px 50px rgba(27, 54, 34, .12);
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+
+    header {
+      padding: 28px min(5vw, 56px) 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfa;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 48px);
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(280px, 1.25fr) minmax(320px, .75fr);
+      gap: 22px;
+      padding: 24px min(5vw, 56px) 40px;
+    }
+
+    .flow-wrap, .detail-panel, .legend, .message-preview {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .flow-wrap { padding: 18px; min-height: 640px; }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .toolbar strong { font-size: 18px; }
+
+    button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:hover, button:focus {
+      border-color: var(--green);
+      outline: none;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      gap: 18px 14px;
+      align-items: stretch;
+    }
+
+    .step {
+      position: relative;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      min-height: 138px;
+      padding: 14px;
+      border: 2px solid transparent;
+      border-radius: var(--radius);
+      background: #fdfefd;
+      box-shadow: inset 0 0 0 1px var(--line);
+      cursor: pointer;
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    }
+
+    .step:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px rgba(27, 54, 34, .14);
+    }
+
+    .step.active {
+      border-color: var(--green);
+      box-shadow: 0 14px 34px rgba(47, 125, 79, .22);
+    }
+
+    .step .num {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--green);
+      font-weight: 800;
+    }
+
+    .step h2 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .step.telegram .num { background: var(--blue); }
+    .step.ai .num { background: var(--amber); }
+    .step.alert .num { background: var(--red); }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: var(--green);
+      font-size: 24px;
+      min-height: 42px;
+    }
+
+    .wide { grid-column: span 2; }
+    .full { grid-column: 1 / -1; }
+
+    .side {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .detail-panel { padding: 22px; }
+
+    .detail-panel h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    .detail-panel .tag {
+      display: inline-block;
+      margin-bottom: 16px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #e7f1e9;
+      color: #245f3d;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .detail-panel ul {
+      margin: 10px 0 0;
+      padding-left: 18px;
+    }
+
+    .detail-panel li { margin: 7px 0; }
+
+    code {
+      padding: 2px 5px;
+      background: #eef3ef;
+      border-radius: 5px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: .95em;
+    }
+
+    .legend, .message-preview { padding: 18px; }
+
+    .legend h3, .message-preview h3 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 13px;
+      background: #fff;
+    }
+
+    .phone {
+      border: 1px solid #b7c7bd;
+      border-radius: 18px;
+      padding: 14px;
+      background: #edf4f7;
+    }
+
+    .bubble {
+      margin-left: auto;
+      max-width: 92%;
+      padding: 12px;
+      border-radius: 8px;
+      background: #ffffff;
+      border: 1px solid #d5e1da;
+      white-space: pre-line;
+      font-size: 14px;
+    }
+
+    .routes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .route {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfcfa;
+    }
+
+    .route strong { display: block; margin-bottom: 4px; }
+    .route span { color: var(--muted); font-size: 14px; }
+
+    @media (max-width: 980px) {
+      main { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      .wide { grid-column: span 1; }
+    }
+
+    @media (max-width: 560px) {
+      header, main { padding-left: 16px; padding-right: 16px; }
+      .flow { grid-template-columns: 1fr; }
+      .routes { grid-template-columns: 1fr; }
+      .flow-wrap { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Flujo Telegram para Diagnostico Agricola</h1>
+    <p class="subtitle">Mapa interactivo de como quedaria el sistema: el agricultor envia una foto por Telegram, el orquestador la procesa con la CNN, agrega clima y responde con informacion base.</p>
+  </header>
+
+  <main>
+    <section class="flow-wrap" aria-label="Mapa del flujo">
+      <div class="toolbar">
+        <strong>Mapa del proceso</strong>
+        <div>
+          <button id="prevBtn" type="button">Anterior</button>
+          <button id="nextBtn" type="button">Siguiente</button>
+        </div>
+      </div>
+
+      <div class="flow" id="flow">
+        <article class="step telegram active" tabindex="0" data-step="0">
+          <span class="num">1</span>
+          <h2>Usuario envia foto</h2>
+          <p>El agricultor toma una imagen de la hoja y la manda al bot de Telegram.</p>
+        </article>
+        <div class="arrow">→</div>
+        <article class="step telegram" tabindex="0" data-step="1">
+          <span class="num">2</span>
+          <h2>Bot recibe imagen</h2>
+          <p>Telegram entrega el mensaje, el chat ID y el archivo de imagen.</p>
+        </article>
+        <div class="arrow">→</div>
+
+        <article class="step wide" tabindex="0" data-step="2">
+          <span class="num">3</span>
+          <h2>n8n descarga archivo</h2>
+          <p>El workflow toma el file_id de Telegram y obtiene el binario real de la foto.</p>
+        </article>
+        <div class="arrow">→</div>
+        <article class="step" tabindex="0" data-step="3">
+          <span class="num">4</span>
+          <h2>n8n envia a FastAPI</h2>
+          <p>La imagen se manda por HTTP POST al endpoint local del modelo.</p>
+        </article>
+
+        <article class="step ai" tabindex="0" data-step="4">
+          <span class="num">5</span>
+          <h2>CNN diagnostica</h2>
+          <p>PyTorch procesa la imagen y devuelve clase probable y confianza.</p>
+        </article>
+        <div class="arrow">→</div>
+        <article class="step" tabindex="0" data-step="5">
+          <span class="num">6</span>
+          <h2>n8n evalua confianza</h2>
+          <p>Se define si el resultado es alto, medio o requiere inspeccion humana.</p>
+        </article>
+        <div class="arrow">→</div>
+
+        <article class="step" tabindex="0" data-step="6">
+          <span class="num">7</span>
+          <h2>Consulta clima</h2>
+          <p>OpenWeatherMap entrega temperatura, condicion y posible lluvia.</p>
+        </article>
+        <div class="arrow">→</div>
+        <article class="step ai" tabindex="0" data-step="7">
+          <span class="num">8</span>
+          <h2>Gemini redacta</h2>
+          <p>El agente combina diagnostico, confianza, clima y reglas agronomicas.</p>
+        </article>
+        <div class="arrow">→</div>
+
+        <article class="step telegram full" tabindex="0" data-step="8">
+          <span class="num">9</span>
+          <h2>Respuesta por Telegram</h2>
+          <p>El usuario recibe un mensaje breve con diagnostico, confianza, clima, recomendacion y advertencia.</p>
+        </article>
+      </div>
+
+      <div class="routes">
+        <div class="route">
+          <strong>Ruta feliz</strong>
+          <span>Foto clara, confianza alta y clima apto para recomendacion.</span>
+        </div>
+        <div class="route">
+          <strong>Ruta con alerta</strong>
+          <span>Confianza menor a 0.60: pedir nueva foto o revision humana.</span>
+        </div>
+        <div class="route">
+          <strong>Ruta climatica</strong>
+          <span>Si hay lluvia: no recomendar aplicacion inmediata de pesticidas.</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="detail-panel" aria-live="polite">
+        <span class="tag" id="detailTag">Entrada</span>
+        <h2 id="detailTitle">Usuario envia foto</h2>
+        <p id="detailText">El agricultor toma una foto de una hoja afectada y la envia al bot de Telegram. Idealmente debe ser una imagen nitida, con buena luz y una sola hoja como foco principal.</p>
+        <ul id="detailList">
+          <li>Dato principal: imagen JPG o PNG.</li>
+          <li>Dato secundario: chat ID para saber a quien responder.</li>
+          <li>Posible dato extra: ciudad o ubicacion si se quiere consultar clima local.</li>
+        </ul>
+      </section>
+
+      <section class="message-preview">
+        <h3>Ejemplo de mensaje final</h3>
+        <div class="phone">
+          <div class="bubble">Diagnostico: Oidio en Vid
+Confianza: 92.3% - Alta
+
+Clima actual: 18 C, nublado
+
+Recomendacion base:
+La imagen sugiere presencia de oidio. Revisar hojas cercanas y evitar aplicar tratamiento si hay lluvia o alta humedad.
+
+Nota: este resultado apoya la decision, pero no reemplaza una inspeccion profesional.</div>
+        </div>
+      </section>
+
+      <section class="legend">
+        <h3>Componentes necesarios</h3>
+        <div class="chips">
+          <span class="chip">BotFather</span>
+          <span class="chip">Telegram Trigger</span>
+          <span class="chip">Download File</span>
+          <span class="chip">HTTP Request</span>
+          <span class="chip">FastAPI</span>
+          <span class="chip">modelo_vision.pth</span>
+          <span class="chip">OpenWeatherMap</span>
+          <span class="chip">Gemini</span>
+          <span class="chip">Telegram Send Message</span>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const details = [
+      {
+        tag: "Entrada",
+        title: "Usuario envia foto",
+        text: "El agricultor toma una foto de una hoja afectada y la envia al bot de Telegram. Idealmente debe ser una imagen nitida, con buena luz y una sola hoja como foco principal.",
+        items: [
+          "Dato principal: imagen JPG o PNG.",
+          "Dato secundario: chat ID para saber a quien responder.",
+          "Posible dato extra: ciudad o ubicacion si se quiere consultar clima local."
+        ]
+      },
+      {
+        tag: "Telegram",
+        title: "Bot recibe imagen",
+        text: "El bot funciona como puerta de entrada. Telegram guarda la imagen y entrega metadatos del mensaje al workflow.",
+        items: [
+          "Se necesita crear el bot con BotFather.",
+          "n8n debe tener configurada la credencial del token.",
+          "El flujo debe validar que el mensaje traiga una foto."
+        ]
+      },
+      {
+        tag: "n8n",
+        title: "n8n descarga archivo",
+        text: "El Telegram Trigger normalmente entrega un identificador del archivo. Luego n8n debe descargar el binario para poder enviarlo a FastAPI.",
+        items: [
+          "Nodo sugerido: Telegram Download File.",
+          "Salida esperada: binario de imagen.",
+          "Si no hay imagen, responder pidiendo una foto valida."
+        ]
+      },
+      {
+        tag: "FastAPI",
+        title: "n8n envia a FastAPI",
+        text: "n8n manda la foto como form-data al microservicio local donde vive la CNN.",
+        items: [
+          "Endpoint: POST http://127.0.0.1:8001/predecir_muestra.",
+          "Campo esperado por la API: file.",
+          "Respuesta esperada: diagnostico y confianza."
+        ]
+      },
+      {
+        tag: "Modelo CNN",
+        title: "CNN diagnostica",
+        text: "FastAPI carga el modelo modelo_vision.pth, transforma la imagen a 64x64, normaliza y ejecuta inferencia con PyTorch.",
+        items: [
+          "Clases: Planta_Sana, Tizon_Tardio_Papa, Oidio_Vid.",
+          "Salida: clase con mayor probabilidad.",
+          "Confianza: valor entre 0 y 1 convertido luego a porcentaje."
+        ]
+      },
+      {
+        tag: "Reglas",
+        title: "n8n evalua confianza",
+        text: "Antes de redactar la respuesta, conviene convertir la confianza en una categoria entendible.",
+        items: [
+          "Alta: confianza mayor o igual a 0.80.",
+          "Media: confianza entre 0.60 y 0.79.",
+          "Baja: menor a 0.60, pedir nueva foto o inspeccion humana."
+        ]
+      },
+      {
+        tag: "Clima",
+        title: "Consulta clima",
+        text: "El flujo puede consultar OpenWeatherMap usando la ciudad enviada por el usuario o una ciudad por defecto.",
+        items: [
+          "Parametros: q, appid y units=metric.",
+          "Datos utiles: temperatura, descripcion climatica, lluvia.",
+          "Regla clave: si hay lluvia, no recomendar aplicacion inmediata."
+        ]
+      },
+      {
+        tag: "Gemini",
+        title: "Gemini redacta",
+        text: "Gemini recibe el diagnostico, confianza, clima y reglas. Su rol es transformar datos tecnicos en una respuesta clara para el agricultor.",
+        items: [
+          "Modelo usado en el workflow actual: gemini-2.5-flash.",
+          "Debe responder en formato breve y estructurado.",
+          "Debe incluir advertencia de que no reemplaza evaluacion profesional."
+        ]
+      },
+      {
+        tag: "Salida",
+        title: "Respuesta por Telegram",
+        text: "n8n envia al mismo chat el resultado final. El mensaje debe ser corto, accionable y facil de leer desde el telefono.",
+        items: [
+          "Incluir diagnostico, confianza y nivel de certeza.",
+          "Incluir clima y recomendacion base.",
+          "Agregar advertencia si la foto es poco confiable o hay lluvia."
+        ]
+      }
+    ];
+
+    const steps = Array.from(document.querySelectorAll(".step"));
+    const title = document.getElementById("detailTitle");
+    const tag = document.getElementById("detailTag");
+    const text = document.getElementById("detailText");
+    const list = document.getElementById("detailList");
+    let active = 0;
+
+    function render(index) {
+      active = (index + details.length) % details.length;
+      steps.forEach((step, i) => step.classList.toggle("active", i === active));
+      const data = details[active];
+      tag.textContent = data.tag;
+      title.textContent = data.title;
+      text.textContent = data.text;
+      list.innerHTML = "";
+      data.items.forEach(item => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        list.appendChild(li);
+      });
+    }
+
+    steps.forEach((step, i) => {
+      step.addEventListener("click", () => render(i));
+      step.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          render(i);
+        }
+      });
+    });
+
+    document.getElementById("prevBtn").addEventListener("click", () => render(active - 1));
+    document.getElementById("nextBtn").addEventListener("click", () => render(active + 1));
+  </script>
+</body>
+</html>
