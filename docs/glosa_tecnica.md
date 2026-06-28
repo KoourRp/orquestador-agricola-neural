@@ -1,254 +1,298 @@
-# Glosa Técnica de Hiperparámetros y Conceptos — Orquestador Agrícola Neural
+# Guía de Estudio Progresiva — Orquestador Agrícola Neural
 
-> Auditoría exhaustiva de todos los hiperparámetros y conceptos de Deep Learning rastreados a lo largo de los archivos `src/entrenar_cnn.py` y `src/api_vision.py`.
-
----
-
-## Índice
-
-1. [Hiperparámetros de Entrenamiento](#1-hiperparámetros-de-entrenamiento)
-2. [Hiperparámetros de Arquitectura](#2-hiperparámetros-de-arquitectura-topografía-de-la-red)
-3. [Conceptos Clave de Deep Learning](#3-conceptos-clave-de-deep-learning)
-4. [Diagrama Visual: Flujo de Tensores](#4-diagrama-visual-flujo-de-tensores)
-5. [¿Por qué esto y no otra cosa? (Contexto del proyecto)](#5-por-qué-esto-y-no-otra-cosa-contexto-del-proyecto)
-6. [Parámetros Totales de la Red](#6-parámetros-totales-de-la-red)
-7. [Trazabilidad Inter-Archivo](#7-trazabilidad-inter-archivo)
-8. [Áreas de Mejora Identificadas](#8-áreas-de-mejora-identificadas)
-9. [Preguntas de Auto-Evaluación](#9-preguntas-de-auto-evaluación)
+> Material organizado de **menos a más técnico**. Si tienes poco tiempo, estudia en orden y detente donde te sientas cómodo. Cada nivel es suficiente para el anterior.
 
 ---
 
-## 1. Hiperparámetros de Entrenamiento
+## Índice por Nivel
 
-| Parámetro | Valor | Archivo | Propósito Técnico |
-|---|---|---|---|
-| `IMG_SIZE` | `64` | `entrenar_cnn.py:27` | Dimensión espacial de entrada (64×64 px). Compromiso entre resolución y costo computacional. Menor que ImageNet (224) pero suficiente para patrones foliares en CPU. |
-| `BATCH_SIZE` | `32` | `entrenar_cnn.py:28` | Muestras por actualización de pesos. Estándar empírico (Bengio 2012). Menor → gradientes ruidosos; mayor → más RAM, mínimos agudos. |
-| `EPOCHS` | `10` | `entrenar_cnn.py:29` | Pasadas completas por el dataset. Con ~2000 imgs y batch=32 → ~630 actualizaciones totales. Conservador para evitar overfitting. |
-| `lr` (learning rate) | `0.001` | `entrenar_cnn.py:108` | Tasa de aprendizaje de Adam. Valor por defecto recomendado por Kingma & Ba (2014). Controla la magnitud de cada paso de actualización. |
-| `Normalize μ,σ` | `(0.5, 0.5, 0.5)` | `entrenar_cnn.py:64`, `api_vision.py:50` | Reescala tensores de [0,1] a [-1,1]. Centra distribución en 0 para gradientes más estables. Genérico (vs. medias de ImageNet). |
+- 🟢 [Nivel 1 — ¿Qué hace este proyecto? (5 min)](#-nivel-1--qué-hace-este-proyecto)
+- 🟡 [Nivel 2 — ¿Cómo está construido? (10 min)](#-nivel-2--cómo-está-construido)
+- 🟠 [Nivel 3 — ¿Cómo aprende la red? (15 min)](#-nivel-3--cómo-aprende-la-red)
+- 🔴 [Nivel 4 — Detalles técnicos profundos (20 min)](#-nivel-4--detalles-técnicos-profundos)
+- ⚫ [Nivel 5 — Auditoría completa de hiperparámetros (referencia)](#-nivel-5--auditoría-completa-de-hiperparámetros)
 
 ---
 
-## 2. Hiperparámetros de Arquitectura (Topografía de la Red)
+## 🟢 Nivel 1 — ¿Qué hace este proyecto?
 
-| Parámetro | Valor | Archivo | Propósito Técnico |
-|---|---|---|---|
-| `conv1 out_channels` | `16` | `entrenar_cnn.py:78` | 16 filtros iniciales para features de bajo nivel (bordes, gradientes de color). Estándar para datasets pequeños. |
-| `conv2 out_channels` | `32` | `entrenar_cnn.py:83` | Duplicación progresiva (16→32). Patrón VGG: más filtros en capas profundas para features complejas (manchas, texturas de enfermedad). |
-| `kernel_size` | `3×3` | `entrenar_cnn.py:78,83` | Kernel mínimo efectivo (VGGNet). Campo receptivo local con menos parámetros que 5×5 o 7×7. |
-| `padding` | `1` | `entrenar_cnn.py:78,83` | "Same padding": preserva dimensiones espaciales después de convolución. `out = (64+2×1-3)/1+1 = 64`. |
-| `MaxPool kernel/stride` | `2/2` | `entrenar_cnn.py:80,85` | Reduce dimensiones espaciales 50% por bloque (64→32→16). Aporta invarianza traslacional. |
-| `fc1 (hidden layer)` | `8192→64` | `entrenar_cnn.py:89` | Cuello de botella: comprime 8192 features a 64 neuronas. Fuerza representación compacta. Suficiente para 3 clases sin overfitting. |
-| `fc2 (output layer)` | `64→3` | `entrenar_cnn.py:91` | 3 logits de salida: uno por clase agrícola (`Oidio_Vid`, `Planta_Sana`, `Tizon_Tardio_Papa`). |
-| `num_classes` | `3` | ambos archivos | Clases de clasificación: Planta Sana, Tizón Tardío (Papa), Oídio (Vid). |
+**Objetivo:** Entender el sistema sin conocer nada de programación ni redes neuronales.
 
----
+### El problema que resuelve
 
-## 3. Conceptos Clave de Deep Learning
+Un agricultor tiene una planta enferma. Toma una foto con el celular. El sistema le dice en segundos qué enfermedad tiene y qué tratamiento aplicar.
 
-### 3.1 Tensores
-
-| Concepto | Ubicación | Descripción |
-|---|---|---|
-| **PIL → Tensor** | `transforms.ToTensor()` en ambos archivos | Convierte imagen PIL `[H,W,C]` uint8 `[0,255]` → Tensor `[C,H,W]` float32 `[0,1]`. |
-| **Normalización** | `transforms.Normalize()` en ambos archivos | Aplica `z = (x-0.5)/0.5` por canal. Reescala a `[-1,1]`. |
-| **unsqueeze(0)** | `api_vision.py:90` | Añade dimensión de batch: `[3,64,64]` → `[1,3,64,64]`. Requerido porque la red siempre espera `[B,C,H,W]`. |
-| **view (Flatten)** | `entrenar_cnn.py:96`, `api_vision.py:38` | `x.view(x.size(0), -1)`: `[B,32,16,16]` → `[B,8192]`. Puente CNN→MLP. |
-
-### 3.2 CNN (Red Neuronal Convolucional)
-
-| Componente | Ubicación | Descripción |
-|---|---|---|
-| **Conv2d (Convolución)** | `entrenar_cnn.py:78,83` | Aplica filtros deslizantes sobre feature maps. Extrae patrones espaciales jerárquicos. |
-| **ReLU (Activación)** | `entrenar_cnn.py:79,84,90` | `f(x) = max(0,x)`. Estándar desde AlexNet (2012). Derivada = 1 para x>0 → **mitiga vanishing gradient** (vs. Sigmoid cuya derivada máx es 0.25). |
-| **MaxPool2d (Pooling)** | `entrenar_cnn.py:80,85` | Submuestreo: selecciona máximo en ventana 2×2. Reduce parámetros e introduce invarianza traslacional. |
-
-### 3.3 MLP (Perceptrón Multicapa)
-
-| Componente | Ubicación | Descripción |
-|---|---|---|
-| **Linear (fc1)** | `entrenar_cnn.py:89` | Capa densa 8192→64. Operación: `y = Wx + b`. 524,352 parámetros (93% del total de la red). |
-| **Linear (fc2)** | `entrenar_cnn.py:91` | Capa de salida 64→3. Produce logits crudos (sin Softmax; CrossEntropyLoss la aplica internamente). |
-| **Dropout** | No implementado | Regularización ausente. Área de mejora: `nn.Dropout(0.5)` entre fc1 y fc2 reduciría riesgo de overfitting. |
-
-### 3.4 Backpropagation (Retropropagación)
-
-| Paso | Código | Descripción |
-|---|---|---|
-| **Zero Grad** | `optimizer.zero_grad()` — `entrenar_cnn.py:114` | Limpia gradientes acumulados. PyTorch acumula por defecto; se debe reiniciar cada iteración. |
-| **Forward Pass** | `outputs = model(inputs)` — `entrenar_cnn.py:115` | Propagación hacia adelante. Construye el grafo computacional dinámico. |
-| **Loss** | `loss = criterion(outputs, labels)` — `entrenar_cnn.py:116` | Calcula escalar de error. CrossEntropyLoss: `L = -log(P(clase_correcta))`. |
-| **Backward** | `loss.backward()` — `entrenar_cnn.py:117` | Recorre el grafo en orden inverso aplicando regla de la cadena. Almacena `∂L/∂w` en `.grad`. |
-| **Step** | `optimizer.step()` — `entrenar_cnn.py:118` | Adam actualiza pesos: `w = w - lr·m̂/(√v̂ + ε)`. Modifica los ~529,635 parámetros in-place. |
-
-### 3.5 Función de Pérdida
-
-| Concepto | Ubicación | Descripción |
-|---|---|---|
-| **CrossEntropyLoss** | `entrenar_cnn.py:107` | Combina LogSoftmax + NLLLoss. `L = -log(P(y_true))`. Penaliza más al modelo cuando asigna baja probabilidad a la clase correcta. Ideal para clasificación multiclase. |
-| **Contexto agrícola** | — | Un diagnóstico de "Planta_Sana" cuando hay Tizón produce pérdida alta → la red aprende a ser cautelosa con falsos negativos. |
-
-### 3.6 Optimizador
-
-| Concepto | Ubicación | Descripción |
-|---|---|---|
-| **Adam** | `entrenar_cnn.py:108` | Adaptive Moment Estimation (Kingma & Ba, 2014). Combina Momentum (β₁=0.9) + RMSProp (β₂=0.999). Learning rate adaptativo **por parámetro** → convergencia más rápida que SGD puro. Robusto a gradientes ruidosos. |
-
-### 3.7 Épocas y Batches
-
-| Concepto | Ubicación | Descripción |
-|---|---|---|
-| **Época (bucle externo)** | `for epoch in range(EPOCHS)` — `entrenar_cnn.py:111` | 1 pasada completa por todo el dataset (~2000 imgs). 10 épocas totales. |
-| **Batch (bucle interno)** | `for i, (inputs, labels) in enumerate(dataloader)` — `entrenar_cnn.py:113` | Subconjunto de 32 muestras. ~63 batches/época. Cada batch ejecuta forward→loss→backward→step. |
-
-### 3.8 Inferencia en Producción
-
-| Concepto | Ubicación | Descripción |
-|---|---|---|
-| **model.eval()** | `api_vision.py:60` | Modo evaluación: desactiva Dropout, fija BatchNorm. Predicciones deterministas. |
-| **torch.no_grad()** | `api_vision.py:93` | Desactiva autograd. ~50% menos memoria, forward más rápido. No hay backprop en producción. |
-| **Softmax** | `api_vision.py:95` | `P(i) = e^(zᵢ)/Σe^(zⱼ)`. Convierte logits → probabilidades interpretables [0,1]. |
-| **load_state_dict()** | `api_vision.py:59` | Carga pesos serializados en la arquitectura réplica. Requiere clase idéntica a la de entrenamiento. |
-
----
-
-## 4. Diagrama Visual: Flujo de Tensores
-
-Esta sección muestra cómo cambia la forma (shape) del tensor en cada operación. Leer de arriba a abajo.
-
-### 4.1 Entrenamiento (entrenar_cnn.py)
+### Los tres pasos del sistema
 
 ```
-IMAGEN EN DISCO (JPG/PNG)
-         │
-         ▼ transforms.Resize((64, 64))
-PIL Image [H×W×3]  ← tamaño variable de la foto original
-         │
-         ▼ transforms.ToTensor()
-Tensor  [3, 64, 64]  float32, rango [0.0, 1.0]
-         │  C=3 canales RGB, H=64, W=64
-         │
-         ▼ transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
-Tensor  [3, 64, 64]  float32, rango [-1.0, 1.0]
-         │
-         ▼ DataLoader agrupa 32 imágenes → mini-batch
-Tensor  [32, 3, 64, 64]   ← B=32 (batch), C=3, H=64, W=64
-         │
-         ╔══════════════════════ AgricolaCNN.forward() ══════════════════════╗
-         │                                                                    ║
-         ▼ conv1 (3→16 filtros, kernel 3×3, padding 1)                      ║
-Tensor  [32, 16, 64, 64]  ← 16 feature maps, mismo tamaño espacial         ║
-         │                                                                    ║
-         ▼ relu1: f(x) = max(0, x)  [sin cambio de shape]                   ║
-Tensor  [32, 16, 64, 64]                                                     ║
-         │                                                                    ║
-         ▼ pool1: MaxPool2d(2×2)  → divide H y W a la mitad                 ║
-Tensor  [32, 16, 32, 32]  ← ¡la imagen se "encogió" espacialmente!         ║
-         │                                                                    ║
-         ▼ conv2 (16→32 filtros, kernel 3×3, padding 1)                     ║
-Tensor  [32, 32, 32, 32]  ← más filtros, mismo tamaño espacial             ║
-         │                                                                    ║
-         ▼ relu2                                                              ║
-Tensor  [32, 32, 32, 32]                                                     ║
-         │                                                                    ║
-         ▼ pool2: MaxPool2d(2×2)                                             ║
-Tensor  [32, 32, 16, 16]  ← volvió a encoger espacialmente                 ║
-         │                                                                    ║
-         ▼ x.view(x.size(0), -1)  ← FLATTEN: 32×16×16 = 8192               ║
-Tensor  [32, 8192]  ← ya no es una cuadrícula 2D, es un vector             ║
-         │                                                                    ║
-         ▼ fc1: Linear(8192 → 64)                                           ║
-Tensor  [32, 64]   ← representación compacta                                ║
-         │                                                                    ║
-         ▼ relu3                                                              ║
-Tensor  [32, 64]                                                             ║
-         │                                                                    ║
-         ▼ fc2: Linear(64 → 3)                                              ║
-Tensor  [32, 3]    ← 3 logits crudos por imagen (un score por clase)       ║
-         ║                                                                    ║
-         ╚════════════════════════════════════════════════════════════════════╝
-         │
-         ▼ CrossEntropyLoss(outputs, labels)
-Tensor  []  ← escalar: valor de pérdida (loss) del batch
-         │
-         ▼ loss.backward() → calcula ∂L/∂w para cada parámetro
-         ▼ optimizer.step() → actualiza los 529,635 pesos
+📷 Foto de la hoja
+       │
+       ▼
+🧠 Red Neuronal (CNN) — analiza la imagen como un experto visual
+       │ "Es Oídio, confianza 92%"
+       ▼
+🌤️ API del Clima — consulta temperatura y humedad de la zona
+       │
+       ▼
+🤖 Gemini (IA de Google) — cruza diagnóstico + clima y recomienda tratamiento
+       │
+       ▼
+💬 Respuesta al agricultor vía formulario web o Telegram
 ```
 
-### 4.2 Inferencia (api_vision.py) — una sola imagen
+### Las tres enfermedades que detecta
+
+| Clase | Qué es | Síntoma visual |
+|---|---|---|
+| `Planta_Sana` | Sin enfermedad | Verde uniforme |
+| `Tizon_Tardio_Papa` | Hongo que destruye papas | Manchas marrones oscuras |
+| `Oidio_Vid` | Hongo que afecta uvas | Polvo blanco en la hoja |
+
+### Los dos archivos de código
+
+| Archivo | Qué hace en una frase |
+|---|---|
+| `entrenar_cnn.py` | Enseña a la red neuronal a distinguir las 3 enfermedades usando miles de fotos |
+| `api_vision.py` | Expone la red entrenada como un servicio web que recibe fotos y responde diagnósticos |
+
+---
+
+## 🟡 Nivel 2 — ¿Cómo está construido?
+
+**Objetivo:** Entender la arquitectura sin saber matemáticas.
+
+### ¿Qué es una Red Neuronal Convolucional (CNN)?
+
+Imagina que tienes una foto de una hoja y la analizas con una lupa que se mueve por toda la imagen buscando patrones:
+
+- **Primera pasada con la lupa:** detecta cosas simples — bordes, cambios de color, zonas brillantes
+- **Segunda pasada:** combina esos patrones simples y detecta cosas más complejas — manchas, texturas, distribución de colores
+- **Al final:** con toda esa información, decide a cuál de las 3 clases pertenece la hoja
+
+Eso es exactamente lo que hace la CNN. La "lupa" se llama **filtro** o **kernel**.
+
+### La arquitectura de AgricolaCNN en lenguaje simple
 
 ```
-IMAGEN SUBIDA VÍA HTTP (bytes multipart)
-         │
-         ▼ Image.open(io.BytesIO(contents)).convert("RGB")
-PIL Image [H×W×3]  ← tamaño original de la foto del agricultor
-         │
-         ▼ transform(image)   [mismo pipeline que entrenamiento]
-Tensor  [3, 64, 64]
-         │
-         ▼ .unsqueeze(0)   ← añade dimensión de batch = 1
-Tensor  [1, 3, 64, 64]   ← "batch de una sola imagen"
-         │
-         ▼ torch.no_grad(): ACTIVE_MODEL(input_tensor)
-Tensor  [1, 3]   ← 3 logits (ej: [-0.5, 2.1, 0.3])
-         │
-         ▼ F.softmax(outputs, dim=1)
-Tensor  [1, 3]   ← probabilidades (ej: [0.05, 0.72, 0.23])  → suman 1.0
-         │
-         ▼ torch.max(probabilities, 1)
-confidence = 0.72,  predicted_idx = 1
-         │
-         ▼ CLASS_NAMES[1]
-"Planta_Sana"
-         │
-         ▼ JSONResponse
-{"status": "success", "diagnostico": "Planta_Sana", "confianza": 0.72}
+FOTO (64×64 píxeles, 3 colores RGB)
+    │
+    ▼ Bloque 1: 16 "lupas" buscan patrones simples
+    │   → La imagen se achica a la mitad (64→32)
+    │
+    ▼ Bloque 2: 32 "lupas" buscan patrones complejos
+    │   → La imagen se achica a la mitad (32→16)
+    │
+    ▼ Aplanado: convierte la imagen en una lista de 8192 números
+    │
+    ▼ Clasificador: 8192 números → 64 → 3 scores finales
+    │
+    ▼ El score más alto gana → "Oidio_Vid con 92% de confianza"
+```
+
+### ¿Qué son los archivos `.pth`?
+
+`modelo_vision.pth` guarda la "memoria" de la red: todos los valores que aprendió durante el entrenamiento. Es como guardar el estado de un cerebro entrenado. Sin ese archivo, la red no sabe distinguir nada.
+
+### Flujo entre los dos archivos
+
+```
+entrenar_cnn.py                    api_vision.py
+──────────────                     ─────────────
+1. Toma miles de fotos    ──────►  1. Carga la red entrenada
+2. Entrena la red                  2. Recibe una foto nueva
+3. Guarda modelo_vision.pth        3. Devuelve el diagnóstico
 ```
 
 ---
 
-## 5. ¿Por qué esto y no otra cosa? (Contexto del proyecto)
+## 🟠 Nivel 3 — ¿Cómo aprende la red?
 
-Esta sección conecta cada decisión técnica con el problema agrícola concreto.
+**Objetivo:** Entender el ciclo de entrenamiento y por qué funciona.
+
+### La analogía del estudiante con examen
+
+El entrenamiento funciona exactamente como estudiar para un examen con respuestas:
+
+1. **La red ve una foto** → hace una predicción (al azar al principio)
+2. **Se compara con la respuesta correcta** → se calcula el error (loss)
+3. **Se analiza dónde se equivocó** → backpropagation encuentra qué parámetros fallaron
+4. **Se corrigen los parámetros** → el optimizador ajusta los pesos un poco
+5. **Repetir 630 veces** → la red mejora progresivamente
+
+### Las épocas y los batches
+
+- **Época:** una pasada completa por todas las fotos del dataset (~2000 imágenes)
+- **Batch:** en vez de actualizar la red después de cada foto, agrupa 32 fotos, calcula el error promedio y actualiza una sola vez. Es más eficiente.
+- Con 2000 imágenes y batch=32: cada época tiene ~63 actualizaciones. Con 10 épocas: **630 actualizaciones totales**.
+
+```
+ÉPOCA 1 ──────────────────────────────────────────────────────────
+  Batch 1 (fotos 1-32):   forward → loss=2.1 → backward → update
+  Batch 2 (fotos 33-64):  forward → loss=1.9 → backward → update
+  ...
+  Batch 63 (fotos 1969-2000): forward → loss=1.4 → backward → update
+  Loss promedio época 1: 1.8
+
+ÉPOCA 2 ──────────────────────────────────────────────────────────
+  Batch 1 (fotos mezcladas): forward → loss=1.2 → backward → update
+  ...
+  Loss promedio época 2: 1.1
+
+...continúa hasta ÉPOCA 10...
+  Loss promedio época 10: 0.3  ← la red ya aprendió
+```
+
+### ¿Qué es la función de pérdida (CrossEntropyLoss)?
+
+Es el "puntaje de equivocación". Cuando la red dice "Planta_Sana con 95%" pero la foto era Tizón, el loss es muy alto. Cuando acerta con alta confianza, el loss es casi 0.
+
+La fórmula simplificada: `loss = -log(probabilidad_asignada_a_la_clase_correcta)`
+
+| Predicción | Probabilidad clase correcta | Loss |
+|---|---|---|
+| Muy seguro y correcto | 0.95 | 0.05 (bajo) |
+| Inseguro | 0.50 | 0.69 (medio) |
+| Muy seguro pero incorrecto | 0.05 | 3.0 (alto) |
+
+### ¿Cómo funciona la inferencia (api_vision.py)?
+
+En producción **NO hay entrenamiento**. La red solo hace el paso hacia adelante:
+
+```python
+with torch.no_grad():      # "No necesito calcular gradientes"
+    outputs = model(foto)  # Un solo forward pass
+    probs = softmax(outputs)  # Convierte scores en probabilidades
+    clase = argmax(probs)     # La más probable gana
+```
+
+---
+
+## 🔴 Nivel 4 — Detalles técnicos profundos
+
+**Objetivo:** Entender las decisiones de diseño y sus fundamentos matemáticos.
+
+### ¿Por qué ReLU y no Sigmoid como activación?
+
+**Vanishing Gradient:** En redes profundas, los gradientes se multiplican por la derivada de la activación en cada capa hacia atrás.
+
+- `Sigmoid'(x) ≤ 0.25` → después de 3 capas: `0.25³ = 0.016` → gradientes casi nulos
+- `ReLU'(x) = 1` (para x > 0) → gradientes sin reducción → la red aprende en todas las capas
+
+**En este proyecto:** sin ReLU, `conv1` (la primera capa) recibiría gradientes ≈0 y nunca aprendería a detectar bordes.
+
+### ¿Por qué Adam y no SGD?
+
+SGD actualiza todos los parámetros con el mismo learning rate:
+`w = w - lr × gradiente`
+
+Adam adapta el lr **por parámetro** según su historia de gradientes:
+`w = w - lr × m̂ / (√v̂ + ε)`
+
+- `m̂`: promedio móvil del gradiente (momentum, β₁=0.9)
+- `v̂`: promedio móvil del gradiente² (escala, β₂=0.999)
+
+**Resultado práctico:** Con solo 630 actualizaciones disponibles, Adam converge donde SGD aún está "calentando".
 
 ### ¿Por qué CrossEntropyLoss y no MSE?
 
-MSE (Error Cuadrático Medio) es para **regresión** (predecir valores continuos como temperatura o peso). Aquí el problema es de **clasificación**: la respuesta correcta es una de 3 etiquetas discretas. CrossEntropyLoss está diseñada para esto porque:
-- Aplica Softmax internamente → interpreta los logits como probabilidades
-- Penaliza exponencialmente cuando el modelo está muy equivocado
-- Es la función estándar para clasificación multiclase en toda la literatura
+MSE mide `(predicción - valor_real)²`. Para clasificación el "valor real" es una etiqueta (0, 1 o 2), no un número continuo. Si la red predice `[0.1, 0.8, 0.1]` para la clase 1, MSE la trataría como casi correcta. CrossEntropyLoss penaliza correctamente basándose en probabilidades.
 
-### ¿Por qué Adam y no SGD puro?
+### El bug de CLASS_NAMES (caso de estudio real)
 
-Con ~630 actualizaciones totales (10 épocas × 63 batches), el tiempo es limitado. Adam converge más rápido porque adapta el learning rate **por parámetro**: los pesos que ven gradientes pequeños (como los de conv1) reciben pasos más grandes; los que ven gradientes grandes (como fc1) reciben pasos más pequeños. SGD usaría el mismo lr para todos, requiriendo más épocas para converger.
-
-### ¿Por qué ReLU y no Sigmoid?
-
-La red tiene 5 capas con activación (relu1, relu2, relu3 + las internas de conv). Si se usara Sigmoid, el gradiente se multiplicaría por `σ'(x) ≤ 0.25` en cada capa hacia atrás. Después de 3 capas: `0.25³ = 0.016` → los pesos de conv1 recibirían gradientes casi nulos y **no aprenderían** (vanishing gradient). ReLU tiene derivada = 1 para x > 0, evitando este colapso.
-
-### ¿Por qué IMG_SIZE=64 y no 224 (como ImageNet)?
-
-El modelo corre en **CPU local** (Edge Computing). Una imagen de 224×224 tiene 12× más píxeles que una de 64×64. Esto significa:
-- 12× más operaciones por convolución
-- 12× más memoria por batch
-- ~10× más tiempo de entrenamiento
-
-64px captura suficiente detalle para distinguir manchas de Oídio (blancas), Tizón (marrón oscuro) y hoja sana (verde uniforme) sin necesitar GPU.
-
-### ¿Por qué CLASS_NAMES en orden alfabético?
-
-`torchvision.datasets.ImageFolder` asigna etiquetas numéricas según el orden **alfabético** de los subdirectorios de `data/`:
+`ImageFolder` asigna etiquetas en orden **alfabético** de los subdirectorios:
 ```
-data/Oidio_Vid/        → índice 0
-data/Planta_Sana/      → índice 1
+data/Oidio_Vid/         → índice 0
+data/Planta_Sana/       → índice 1
 data/Tizon_Tardio_Papa/ → índice 2
 ```
-Si en `api_vision.py` `CLASS_NAMES` estuviera en otro orden (ej. el mismo que `CLASSES` en `entrenar_cnn.py`: `["Planta_Sana", "Tizon_Tardio_Papa", "Oidio_Vid"]`), el modelo diría "Planta_Sana" cuando en realidad predijo el índice 0 = "Oidio_Vid". **Este bug ya ocurrió y fue corregido en la Sesión 2.**
+
+En `entrenar_cnn.py`, `CLASSES = ["Planta_Sana", "Tizon_Tardio_Papa", "Oidio_Vid"]` es solo para generar el mock dataset, no define las etiquetas del entrenamiento real.
+
+En `api_vision.py`, si `CLASS_NAMES = ["Planta_Sana", "Tizon_Tardio_Papa", "Oidio_Vid"]` (orden incorrecto), cuando la red predice índice 0 (Oidio), el código retornaría "Planta_Sana". **El modelo funcionaría perfectamente pero las etiquetas estarían cruzadas.** Corregido en Sesión 2 usando orden alfabético.
+
+### Flujo completo del tensor con shapes
+
+```
+Foto JPG en disco
+       │
+       ▼ PIL.Image.open() + convert("RGB")
+PIL [H, W, 3]   ← tamaño original (ej: 1200×900×3)
+       │
+       ▼ transforms.Resize((64, 64))
+PIL [64, 64, 3]
+       │
+       ▼ transforms.ToTensor()   ← reordena dimensiones y normaliza
+Tensor [3, 64, 64]   float32, rango [0.0, 1.0]
+       │
+       ▼ transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+Tensor [3, 64, 64]   float32, rango [-1.0, 1.0]
+       │
+       ▼ DataLoader: agrupa 32 imágenes
+Tensor [32, 3, 64, 64]
+       │
+       ▼ conv1: 16 filtros 3×3, padding=1  →  (64+2-3)/1+1=64
+Tensor [32, 16, 64, 64]
+       │
+       ▼ relu1: max(0, x)
+Tensor [32, 16, 64, 64]
+       │
+       ▼ pool1: MaxPool2d(2,2)  →  64/2=32
+Tensor [32, 16, 32, 32]
+       │
+       ▼ conv2: 32 filtros 3×3, padding=1
+Tensor [32, 32, 32, 32]
+       │
+       ▼ relu2
+Tensor [32, 32, 32, 32]
+       │
+       ▼ pool2: MaxPool2d(2,2)  →  32/2=16
+Tensor [32, 32, 16, 16]
+       │
+       ▼ x.view(32, -1)  →  32×16×16 = 8192
+Tensor [32, 8192]
+       │
+       ▼ fc1: Linear(8192, 64)
+Tensor [32, 64]
+       │
+       ▼ relu3
+Tensor [32, 64]
+       │
+       ▼ fc2: Linear(64, 3)
+Tensor [32, 3]   ← 3 logits por imagen (scores crudos)
+       │
+       ▼ CrossEntropyLoss(outputs, labels)
+Tensor []        ← escalar: loss promedio del batch
+```
 
 ---
 
-## 6. Parámetros Totales de la Red
+## ⚫ Nivel 5 — Auditoría Completa de Hiperparámetros
+
+**Referencia técnica exhaustiva.** Usa esto para responder preguntas específicas.
+
+### Hiperparámetros de Entrenamiento
+
+| Parámetro | Valor | Archivo | Justificación |
+|---|---|---|---|
+| `IMG_SIZE` | `64` | `entrenar_cnn.py:27` | 64×64 = compromiso CPU/resolución. 224 requiere GPU. |
+| `BATCH_SIZE` | `32` | `entrenar_cnn.py:28` | Estándar empírico. Menor=ruidoso, mayor=memoria. |
+| `EPOCHS` | `10` | `entrenar_cnn.py:29` | ~630 actualizaciones. Conservador anti-overfitting. |
+| `lr` | `0.001` | `entrenar_cnn.py:108` | Default Adam. Recomendado por Kingma & Ba (2014). |
+| `Normalize μ,σ` | `(0.5, 0.5, 0.5)` | ambos archivos | Reescala [0,1]→[-1,1]. Genérico (no específico del dataset). |
+
+### Hiperparámetros de Arquitectura
+
+| Parámetro | Valor | Archivo | Justificación |
+|---|---|---|---|
+| `conv1 out_channels` | `16` | `entrenar_cnn.py:78` | Features simples. Estándar para dataset pequeño. |
+| `conv2 out_channels` | `32` | `entrenar_cnn.py:83` | Patrón VGG: duplicar filtros por profundidad. |
+| `kernel_size` | `3×3` | `entrenar_cnn.py:78,83` | Mínimo efectivo. Menos params que 5×5 o 7×7. |
+| `padding` | `1` | `entrenar_cnn.py:78,83` | "Same padding": mantiene dims espaciales. |
+| `MaxPool stride` | `2` | `entrenar_cnn.py:80,85` | Reduce 50% por bloque. Invarianza traslacional. |
+| `fc1` | `8192→64` | `entrenar_cnn.py:89` | Cuello de botella. 93% de todos los parámetros. |
+| `fc2` | `64→3` | `entrenar_cnn.py:91` | 3 logits = 3 clases. Sin activación (CE la aplica). |
+
+### Parámetros Totales
 
 | Capa | Cálculo | Parámetros |
 |---|---|---|
@@ -258,12 +302,7 @@ Si en `api_vision.py` `CLASS_NAMES` estuviera en otro orden (ej. el mismo que `C
 | fc2 | `(64×3) + 3` | 195 |
 | **TOTAL** | — | **529,635** |
 
-> [!IMPORTANT]
-> El 99% de los parámetros están en la capa fc1 (524,352 de 529,635). Esto es típico en CNNs con clasificador FC denso. Una mejora futura sería usar Global Average Pooling antes del clasificador para eliminar fc1 y reducir parámetros drásticamente.
-
----
-
-## 7. Trazabilidad Inter-Archivo
+### Trazabilidad Inter-Archivo
 
 ```mermaid
 graph LR
@@ -275,7 +314,6 @@ graph LR
         E -->|step| C
         C -->|state_dict| F[modelo_vision.pth]
     end
-
     subgraph "api_vision.py (Fase 2)"
         F -->|load_state_dict| G[AgricolaCNN réplica]
         H[Imagen Upload] -->|transform+unsqueeze| I[Tensor 1,3,64,64]
@@ -283,56 +321,48 @@ graph LR
         G -->|logits 1,3| J[Softmax → argmax]
         J --> K[JSON: diagnostico + confianza]
     end
-
     subgraph "n8n (Fase 3)"
         K -->|HTTP POST| L[Nodo Clima OpenWeather]
         L --> M[Gemini: Recomendación]
     end
 ```
 
----
-
-## 8. Áreas de Mejora Identificadas
+### Áreas de Mejora
 
 | Área | Estado Actual | Recomendación |
 |---|---|---|
-| **Regularización** | Sin Dropout ni Data Augmentation | Agregar `nn.Dropout(0.5)` entre fc1 y fc2; agregar `RandomHorizontalFlip`, `RandomRotation` al pipeline de transforms. |
-| **Desbalance de clases** | 152 Planta_Sana vs 1000 de las otras | Usar `WeightedRandomSampler` o `class_weight` en CrossEntropyLoss. |
-| **Normalización** | Genérica (0.5, 0.5, 0.5) | Calcular media/std real del dataset PlantVillage, o usar valores de ImageNet. |
-| **Validación** | Sin split train/val | Usar `random_split` para crear conjunto de validación (80/20) y monitorear overfitting. |
-| **Global Avg Pool** | fc1 tiene 524K params | Reemplazar Flatten+fc1 por `nn.AdaptiveAvgPool2d(1)` + `Linear(32,3)` → ~99 params. |
+| **Regularización** | Sin Dropout | `nn.Dropout(0.5)` entre fc1 y fc2 |
+| **Data Augmentation** | Sin transformaciones | `RandomHorizontalFlip`, `RandomRotation` |
+| **Desbalance** | 152 vs 1000 imágenes/clase | `WeightedRandomSampler` |
+| **Validación** | Sin split train/val | `random_split` 80/20 |
+| **Arquitectura** | fc1 = 524K params | Global Average Pooling → `Linear(32,3)` |
 
 ---
 
-## 9. Preguntas de Auto-Evaluación
+## Preguntas de Auto-Evaluación
 
-Úsalas para verificar que entiendes el proyecto, no solo que lo memorizaste.
+Intenta responderlas sin mirar el código. Si no puedes, vuelve al nivel correspondiente.
 
-### Sobre Tensores y Shapes
-- ¿Qué shape tiene el tensor después de `pool2` y antes del flatten? ¿Cómo se calcula ese número?
-- ¿Por qué se llama `.unsqueeze(0)` en la inferencia pero no en el entrenamiento?
-- Si `IMG_SIZE` cambiara de 64 a 128, ¿qué valor habría que cambiar en `fc1`? ¿Por qué?
+### 🟢 Nivel 1 (conceptuales)
+- ¿Qué tres enfermedades detecta el sistema y cómo se ven visualmente?
+- ¿Qué hace `entrenar_cnn.py` y qué hace `api_vision.py`?
+- ¿Para qué sirve `modelo_vision.pth`?
 
-### Sobre la Arquitectura CNN
-- ¿Qué detectan los filtros de `conv1` vs los de `conv2`? ¿Por qué hay más en la segunda?
-- ¿Qué pasaría si se eliminara el `MaxPool`? ¿Cuántos parámetros tendría `fc1`?
-- ¿Por qué se usa `padding=1` y no `padding=0`?
+### 🟡 Nivel 2 (arquitectura)
+- ¿Por qué la imagen "se achica" a lo largo de la red pero los canales aumentan?
+- ¿Qué es un filtro/kernel y qué detecta?
+- ¿Qué pasa después del flatten y por qué es necesario?
 
-### Sobre Entrenamiento y Backpropagation
+### 🟠 Nivel 3 (entrenamiento)
 - Nombra los 5 pasos de cada iteración de entrenamiento en orden.
-- ¿Qué pasaría si se olvidara llamar a `optimizer.zero_grad()` antes del backward?
-- ¿Por qué se usa `loss.item()` en vez de solo `loss` para acumular el running_loss?
+- ¿Cuántas actualizaciones de pesos ocurren en total con EPOCHS=10 y BATCH_SIZE=32?
+- ¿Qué significa que el loss baje de 2.1 a 0.3 durante el entrenamiento?
 
-### Sobre Hiperparámetros
-- ¿Qué síntoma verías en el loss si `EPOCHS=1` fuera insuficiente?
-- ¿Qué riesgo tiene subir `BATCH_SIZE` de 32 a 512 en este proyecto?
-- Si `lr=1.0`, ¿qué podría pasarle al loss durante el entrenamiento?
-
-### Sobre el Proyecto Completo
-- ¿Por qué `CLASS_NAMES` en `api_vision.py` está en orden alfabético y no en el mismo orden que `CLASSES` en `entrenar_cnn.py`?
-- ¿Qué error daría `load_state_dict()` si agregas una capa a `AgricolaCNN` en `entrenar_cnn.py` pero no la replicas en `api_vision.py`?
-- ¿Por qué se usa `torch.no_grad()` en inferencia? ¿Qué pasaría si no se usara?
-- ¿Cómo sabe la red si una hoja tiene Oídio si nadie le explicó cómo se ve el Oídio?
+### 🔴 Nivel 4 (técnico)
+- ¿Qué shape tiene el tensor después de `pool2`? ¿Cómo se calcula 8192?
+- ¿Por qué `CLASS_NAMES` en `api_vision.py` debe estar en orden alfabético?
+- ¿Qué pasaría si `IMG_SIZE` fuera 128 en `entrenar_cnn.py` pero 64 en `api_vision.py`?
+- ¿Por qué `torch.no_grad()` en inferencia y no en entrenamiento?
 
 > [!TIP]
-> Las respuestas a todas las preguntas anteriores están en los comentarios de `entrenar_cnn.py` y `api_vision.py`. Si no puedes responder alguna sin mirar el código, vuelve al archivo correspondiente.
+> Para la disertación, dominar **Niveles 1, 2 y 3** es suficiente para explicar el proyecto con fluidez. El **Nivel 4** sirve para responder preguntas técnicas del evaluador.
