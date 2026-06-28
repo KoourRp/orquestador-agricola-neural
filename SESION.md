@@ -258,7 +258,7 @@ Cada corrida del flujo completo = 1 llamada a Gemini → 250/día es más que su
 
 **Lo que se hizo:**
 - Copiado `mapa_flujo_telegram_agricola.html` como referencia del flujo objetivo
-- Confirmada conexión MCP de Claude Code con n8n local
+- Confirmada conexión MCP con n8n local
 - **Bug crítico encontrado y corregido:** modelo entrenado con datos sintéticos (`data_train/`) en vez de imágenes reales (`data/`). Reentrenado con PlantVillage real → ~87% precisión
 - **Segundo bug corregido:** `CLASS_NAMES` estaba en orden incorrecto respecto al orden alfabético que usa `ImageFolder` → etiquetas trocadas. Corregido en `api_vision.py`
 - Identificado desbalance del dataset: 152 `Planta_Sana` vs 1000 de las otras dos clases (punto a mencionar ante el profe como área de mejora)
