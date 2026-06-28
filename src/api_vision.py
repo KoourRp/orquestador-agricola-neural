@@ -40,7 +40,7 @@ class AgricolaCNN(nn.Module):
         x = self.fc2(x)
         return x
 
-CLASS_NAMES = ["Planta_Sana", "Tizon_Tardio_Papa", "Oidio_Vid"]
+CLASS_NAMES = ["Oidio_Vid", "Planta_Sana", "Tizon_Tardio_Papa"]
 MODEL_PATH = "modelo_vision.pth"
 ACTIVE_MODEL = None
 

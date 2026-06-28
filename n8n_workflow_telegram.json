@@ -1,0 +1,132 @@
+{
+  "name": "Orquestador Agrícola - Bot Telegram (@FitoScanAIBot)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "tg-trigger-1",
+      "name": "Telegram: Recibe Foto",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [ -200, 300 ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      },
+      "webhookId": "agricola-telegram-trigger"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.photo[$json.message.photo.length - 1].file_id }}"
+      },
+      "id": "tg-getfile-1",
+      "name": "Telegram: Descarga Foto",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [ 0, 300 ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8001/predecir_muestra",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "parameterType": "form-data-binary",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-cnn-1",
+      "name": "CNN Inferencia (FastAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 200, 300 ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openweathermap.org/data/2.5/weather",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q",      "value": "Santiago" },
+            { "name": "appid",  "value": "TU_OPENWEATHERMAP_KEY" },
+            { "name": "units",  "value": "metric" },
+            { "name": "lang",   "value": "es" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-clima-1",
+      "name": "API Clima (OpenWeather)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 400, 300 ]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.5-flash",
+        "options": {},
+        "prompt": "Eres un agrónomo experto. Un agricultor te envió una foto de su planta por Telegram.\n\nDatos del análisis:\n- Diagnóstico CNN: {{$node[\"CNN Inferencia (FastAPI)\"].json[\"diagnostico\"]}}\n- Confianza del modelo: {{$node[\"CNN Inferencia (FastAPI)\"].json[\"confianza\"]}}\n- Temperatura: {{$json[\"main\"][\"temp\"]}}°C\n- Clima: {{$json[\"weather\"][0][\"description\"]}}\n- Humedad: {{$json[\"main\"][\"humidity\"]}}%\n\nResponde según la confianza:\n- Si confianza >= 0.80: diagnóstico definitivo + tratamiento específico + consideraciones climáticas.\n- Si confianza entre 0.60 y 0.79: advierte que el diagnóstico es tentativo, da recomendaciones generales y sugiere confirmar con inspección visual.\n- Si confianza < 0.60: indica que la imagen no es clara para diagnosticar. Pide al usuario que envíe otra foto con mejor iluminación. Solo comenta brevemente el clima.\n\nRegla extra: si hay lluvia en el clima, NO recomendar pesticidas.\n\nEscribe en español, breve y claro, máximo 6 líneas, con emojis relevantes. No uses markdown complejo, solo texto plano."
+      },
+      "id": "gemini-chain-1",
+      "name": "Agrónomo (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [ 600, 300 ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram: Recibe Foto').item.json.message.chat.id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "id": "tg-send-1",
+      "name": "Telegram: Envía Veredicto",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [ 800, 300 ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram: Recibe Foto": {
+      "main": [ [ { "node": "Telegram: Descarga Foto", "type": "main", "index": 0 } ] ]
+    },
+    "Telegram: Descarga Foto": {
+      "main": [ [ { "node": "CNN Inferencia (FastAPI)", "type": "main", "index": 0 } ] ]
+    },
+    "CNN Inferencia (FastAPI)": {
+      "main": [ [ { "node": "API Clima (OpenWeather)", "type": "main", "index": 0 } ] ]
+    },
+    "API Clima (OpenWeather)": {
+      "main": [ [ { "node": "Agrónomo (Gemini)", "type": "main", "index": 0 } ] ]
+    },
+    "Agrónomo (Gemini)": {
+      "main": [ [ { "node": "Telegram: Envía Veredicto", "type": "main", "index": 0 } ] ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

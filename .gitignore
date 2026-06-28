@@ -14,3 +14,5 @@ __pycache__/
 
 # n8n local data
 .n8n/
+
+graphify-out/

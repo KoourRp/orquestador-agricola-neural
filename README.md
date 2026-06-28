@@ -29,17 +29,19 @@ El proyecto opera bajo una topología de tres capas fuertemente desacopladas:
 ## 📂 Estructura del Repositorio
 
 ```text
-📁 TAREA3/
-├── 📁 data/                  # Dataset curado de hojas reales (Tizón, Oídio, Sanas).
-├── 📁 docs/                  # Documentación teórica y guías de estudio del modelo.
-├── 📁 src/                   # Código fuente de producción.
-│   ├── api_vision.py         # Microservicio FastAPI para inferencia del modelo.
-│   └── entrenar_cnn.py       # Script de entrenamiento PyTorch (exporta .pth).
-├── modelo_vision.pth         # Pesos de la red neuronal pre-entrenada.
-├── n8n_workflow_demo.json    # Flujo de n8n para pruebas interactivas vía Formulario Web.
-├── n8n_workflow_final.json   # Flujo de n8n para despliegue automatizado vía Webhooks.
-├── requirements.txt          # (Sugerido) Dependencias del entorno Python.
-└── README.md                 # Este documento.
+📁 orquestador-agricola-neural/
+├── 📁 data/                          # Dataset PlantVillage: Oidio_Vid/, Planta_Sana/, Tizon_Tardio_Papa/
+├── 📁 docs/                          # Documentación teórica y guías de estudio del modelo.
+├── 📁 src/                           # Código fuente de producción.
+│   ├── api_vision.py                 # Microservicio FastAPI para inferencia del modelo.
+│   └── entrenar_cnn.py               # Script de entrenamiento PyTorch (exporta .pth).
+├── modelo_vision.pth                 # Pesos de la red neuronal entrenada con datos reales.
+├── n8n_workflow_demo.json            # Flujo de n8n para pruebas interactivas vía Formulario Web.
+├── n8n_workflow_telegram.json        # Flujo activo: bot @FitoScanAIBot (Telegram → CNN → Clima → Gemini).
+├── n8n_workflow_final.json           # Flujo de n8n para despliegue automatizado vía Webhooks.
+├── mapa_flujo_telegram_agricola.html # Mockup interactivo del flujo objetivo (bot de Telegram).
+├── SESION.md                         # Bitácora del proyecto: configuración, historial y decisiones.
+└── README.md                         # Este documento.
 ```
 
 ---
@@ -48,19 +50,22 @@ El proyecto opera bajo una topología de tres capas fuertemente desacopladas:
 
 Al ser una arquitectura de procesamiento local (*Edge*), la instalación requiere correr el backend de Python y el orquestador en la misma máquina.
 
-### 1. Levantar el Motor de Inferencia (FastAPI)
-Abre una terminal, activa tu entorno virtual y arranca el servidor. Esto cargará el modelo `.pth` en memoria.
+### 1. Instalar dependencias Python (solo la primera vez)
 
 ```bash
-# Activa tu entorno virtual (si aplica)
-source venv/bin/activate
+pip install fastapi uvicorn torch torchvision pillow python-multipart
+```
 
-# Inicia el microservicio en el puerto 8001
+### 2. Levantar el Motor de Inferencia (FastAPI)
+Abre una terminal en la raíz del proyecto y arranca el servidor. Esto cargará el modelo `.pth` en memoria.
+
+```bash
+# En Windows
 uvicorn src.api_vision:app --port 8001
 ```
 *Verás un mensaje verde indicando: `✅ Modelo PyTorch cargado en memoria desde 'modelo_vision.pth'`.*
 
-### 2. Levantar el Orquestador (n8n local)
+### 3. Levantar el Orquestador (n8n local)
 Abre **una segunda terminal** e inicia n8n usando Node.js:
 
 ```bash
@@ -68,7 +73,7 @@ npx n8n
 ```
 Esto levantará el servidor de n8n en `http://localhost:5678`.
 
-### 3. Configurar el Flujo de Datos
+### 4. Configurar el Flujo de Datos
 1. Entra a `http://localhost:5678` en tu navegador web.
 2. Crea un nuevo Workflow y haz clic en **Import from File...**
 3. Selecciona `n8n_workflow_demo.json`.
@@ -93,9 +98,9 @@ El archivo `n8n_workflow_demo.json` incluye un **Form Trigger**, lo cual genera 
 ---
 
 ## 🛠️ Escalabilidad Futura (Roadmap)
-- **Despliegue Serverless**: Empaquetar la API de FastAPI en un contenedor Docker para despliegues masivos en la nube (AWS ECS, Google Cloud Run).
+- **Bot de Telegram** ✅ *(implementado)*: `@FitoScanAIBot` recibe fotos desde el celular del agricultor vía Telegram. Flujo documentado en `n8n_workflow_telegram.json` con 3 rutas de respuesta según la confianza del diagnóstico (≥0.80 diagnóstico definitivo, 0.60-0.79 tentativo, <0.60 pide nueva foto).
+- **Despliegue Cloud**: Migrar el flujo n8n a una instancia cloud para que funcione sin depender del PC local. Flujo de producción disponible en `n8n_workflow_final.json`.
 - **Entrenamiento Continuo**: Configurar un *pipeline* que reentrene el modelo periódicamente agregando nuevas clasificaciones de plagas a `data/`.
-- **Integración IoT**: Reemplazar el *Form Trigger* de n8n por un Webhook pasivo (`n8n_workflow_final.json`) que reciba imágenes automáticamente desde cámaras montadas en drones o tractores.
 
 ---
 *Desarrollado como Proyecto de Título aplicando estándares modernos de Data Engineering e Inteligencia Artificial.*

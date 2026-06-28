@@ -22,11 +22,11 @@ from PIL import Image
 # -----------------------------------------------------------------------------
 # 1. PREPARACIÓN DE DATOS (MOCK SI NO HAY DATOS REALES)
 # -----------------------------------------------------------------------------
-DATA_DIR = "data_train"
+DATA_DIR = "data"
 CLASSES = ["Planta_Sana", "Tizon_Tardio_Papa", "Oidio_Vid"]
 IMG_SIZE = 64
-BATCH_SIZE = 16
-EPOCHS = 5
+BATCH_SIZE = 32
+EPOCHS = 10
 
 def generate_mock_dataset():
     """Genera imágenes falsas (ruido de colores) si no existe el dataset real.
