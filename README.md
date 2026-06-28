@@ -30,7 +30,7 @@ El proyecto opera bajo una topología de tres capas fuertemente desacopladas:
 
 ```text
 📁 orquestador-agricola-neural/
-├── 📁 data/                          # Dataset PlantVillage: Oidio_Vid/, Planta_Sana/, Tizon_Tardio_Papa/
+├── 📁 data/                          # Dataset PlantVillage (Kaggle: emmarex/plantdisease): Oidio_Vid/, Planta_Sana/, Tizon_Tardio_Papa/
 ├── 📁 docs/                          # Documentación teórica y guías de estudio del modelo.
 ├── 📁 src/                           # Código fuente de producción.
 │   ├── api_vision.py                 # Microservicio FastAPI para inferencia del modelo.

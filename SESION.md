@@ -27,7 +27,7 @@ El sistema corre todo local (Edge Computing): mínima latencia, sin depender de 
 | `n8n_workflow_demo.json` | Flujo n8n con formulario web para demo/presentación (Form Trigger) |
 | `n8n_workflow_telegram.json` | **Flujo activo**: bot Telegram `@FitoScanAIBot` → CNN → Clima → Gemini → respuesta |
 | `n8n_workflow_final.json` | Flujo n8n para producción (recibe imágenes por webhook) |
-| `data/` | Dataset PlantVillage: 1000 Oidio_Vid / 1000 Tizon / 152 Planta_Sana (desbalanceado) |
+| `data/` | Dataset PlantVillage (fuente: kaggle.com/datasets/emmarex/plantdisease): 1000 Oidio_Vid / 1000 Tizon_Tardio_Papa / 152 Planta_Sana (desbalanceado) |
 | `graphify-out/graph.html` | Grafo interactivo de la arquitectura del proyecto (estado actual del código) |
 | `mapa_flujo_telegram_agricola.html` | Mockup del flujo **objetivo**: bot de Telegram reemplazando el Form Trigger. Referencia de hacia dónde evoluciona el sistema. Ver junto al grafo. |
 
