@@ -153,7 +153,7 @@ async def lifespan(app: FastAPI):
         # torch.load deserializa el state_dict desde disco.
         # load_state_dict() mapea cada tensor de pesos al parámetro correspondiente
         # de la red (conv1.weight, conv1.bias, fc1.weight, etc.).
-        model.load_state_dict(torch.load(MODEL_PATH))
+        model.load_state_dict(torch.load(MODEL_PATH, map_location='cpu', weights_only=True))
 
         # ─── model.eval(): MODO INFERENCIA ───
         # Diferencias con model.train():

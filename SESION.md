@@ -413,4 +413,64 @@ Responde cualquier texto. Explica que el bot analiza fotos de hojas + usa clima 
 
 ---
 
+### Sesión 6 — 2026-06-29
+
+**Objetivo:** Agregar contexto de ubicación al agente de recepción — el bot sabe en qué ciudad está el usuario y puede responder preguntas sobre el clima actual.
+
+**Lo que se hizo:**
+
+**Migración a producción (completada en esta sesión):**
+- FastAPI CNN desplegada en HuggingFace Spaces (Docker, puerto 7860) como servicio permanente
+- Workflow migrado a n8n cloud (instancia de Pablo, v2.27.4) — sin ngrok, sin PC encendido
+
+**Feature: Contexto de ubicación en Gemini: Recepción:**
+
+Nueva arquitectura del flujo de texto:
+```
+IF: ¿Es texto? → true → Preparar Contexto (Code) → IF: ¿Tiene GPS?
+                                                          true  → OWM Recepción (HTTP) → Gemini: Recepción
+                                                          false ──────────────────────→ Gemini: Recepción
+                                                                                         → Telegram: Bienvenida
+```
+
+**Nodo — Preparar Contexto (Code node, nuevo):**
+```javascript
+const msg = $input.first().json.message;
+const chatId = msg.chat.id;
+const staticData = $getWorkflowStaticData('global');
+const loc = staticData[`loc_${chatId}`];
+return [{ json: { ...$input.first().json, loc_lat: loc?.lat ?? null, loc_lon: loc?.lon ?? null, tiene_gps: !!loc } }];
+```
+
+**Nodo — IF: ¿Tiene GPS?**
+- Condition: `{{ $json.tiene_gps }}` → Boolean → is true
+
+**Nodo — OWM Recepción (HTTP Request, nuevo):**
+- GET `https://api.openweathermap.org/data/2.5/weather`
+- `lat`: `{{ $json.loc_lat }}`, `lon`: `{{ $json.loc_lon }}`
+- Mismo appid/units/lang que API Clima del flujo de fotos
+
+**Nodo — OWM Confirma (HTTP Request, nuevo):**
+- Insertado entre "Guardar Ubicación" y "Telegram: Confirma Ubicación"
+- `lat`: `{{ $json.lat }}`, `lon`: `{{ $json.lon }}` (sin prefijo `loc_`, viene directo de Guardar Ubicación)
+
+**Nodo — Telegram: Confirma Ubicación (actualizado):**
+```
+{{ `📍 Ubicación guardada: ${$json.name}, ${$json.sys.country}. Usaré el clima aproximado de tu zona para los análisis. 🌱` }}
+```
+Chat ID: `{{ $('Guardar Ubicación').first().json.chatId }}`
+
+**Nodo — Gemini: Recepción — Prompt User Message (actualizado):**
+```
+{{ $('Preparar Contexto').first().json.message?.text || 'Hola' }}
+[Contexto ubicación: {{ $json.name ? $json.name + ', ' + $json.sys.country + ' (GPS guardado)' : 'Sin ubicación guardada' }}]
+{{ $json.main ? `[Clima actual: ${$json.weather[0].description}, ${$json.main.temp}°C, sensación ${$json.main.feels_like}°C, humedad ${$json.main.humidity}%]` : '' }}
+```
+
+**Retry configurado en Gemini: Recepción:** Settings → Retry on Fail → 3 intentos, 10s entre cada uno (Gemini 2.5 Flash Lite devuelve 503 en picos de demanda).
+
+**Estado final:** ✅ **Sistema completamente operativo en la nube.** El bot sabe la ciudad del usuario, responde preguntas de clima, confirma la ubicación guardada con nombre real al recibirla, y el flujo completo (Telegram → n8n cloud → HuggingFace CNN → OWM → Gemini → Telegram) corre sin PC local.
+
+---
+
 *Añadir una entrada en "Historial de sesiones" cada vez que se trabaje en el proyecto.*
