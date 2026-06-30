@@ -43,10 +43,10 @@ class AgricolaCNN(nn.Module):
     Arquitectura resumida:
         Conv2d(3→16, 3×3) → ReLU → MaxPool(2×2)
         Conv2d(16→32, 3×3) → ReLU → MaxPool(2×2)
-        Flatten → Linear(8192→64) → ReLU → Linear(64→3)
+        Flatten → Linear(8192→256) → ReLU → Linear(256→14)
     """
 
-    def __init__(self, num_classes=3):
+    def __init__(self, num_classes=14):
         super(AgricolaCNN, self).__init__()
 
         # ─── BLOQUE CONVOLUCIONAL 1 ───
@@ -64,7 +64,7 @@ class AgricolaCNN(nn.Module):
         self.pool2 = nn.MaxPool2d(2, 2)
         
         # ─── CLASIFICADOR MLP (Fully Connected) ───
-        # Flatten: [B,32,16,16] → [B,8192]. fc1: 8192→64. fc2: 64→3.
+        # Flatten: [B,32,16,16] → [B,8192]. fc1: 8192→256. fc2: 256→14.
         self.fc1 = nn.Linear(32 * 16 * 16, 256)
         self.relu3 = nn.ReLU()
         self.fc2 = nn.Linear(256, num_classes)
@@ -76,7 +76,7 @@ class AgricolaCNN(nn.Module):
         Flujo del tensor:
             [B,3,64,64] → conv1+relu+pool → [B,16,32,32]
             → conv2+relu+pool → [B,32,16,16]
-            → flatten → [B,8192] → fc1+relu → [B,64] → fc2 → [B,3]
+            → flatten → [B,8192] → fc1+relu → [B,256] → fc2 → [B,14]
         """
         x = self.pool1(self.relu1(self.conv1(x)))
         x = self.pool2(self.relu2(self.conv2(x)))
@@ -90,14 +90,11 @@ class AgricolaCNN(nn.Module):
         x = self.fc2(x)
         return x
 
-# ─── CLASS_NAMES: Mapeo índice → nombre de clase ───
+# ─── CLASS_NAMES: Mapeo índice → nombre de clase (14 clases) ───
 # NOTA CRÍTICA: Este orden DEBE coincidir con el orden ALFABÉTICO que
-# torchvision.datasets.ImageFolder asigna durante el entrenamiento:
-#   Directorio "Oidio_Vid"       → índice 0
-#   Directorio "Planta_Sana"     → índice 1
-#   Directorio "Tizon_Tardio_Papa" → índice 2
-# Si este orden no coincide, las predicciones se mostrarán con etiquetas cruzadas
-# (bug que ya fue corregido en la Sesión 2, ver SESION.md).
+# torchvision.datasets.ImageFolder asigna durante el entrenamiento.
+# Índices: 0=Arana_Roja_Tomate, 1=Mancha_Bact_Pimiento, ... 13=Virus_Rizo_Tomate.
+# Si este orden no coincide, las predicciones se mostrarán con etiquetas cruzadas.
 CLASS_NAMES = [
     "Arana_Roja_Tomate",
     "Mancha_Bact_Pimiento",

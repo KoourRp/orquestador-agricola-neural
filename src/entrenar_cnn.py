@@ -22,7 +22,7 @@ GLOSA DE COMPONENTES DE DEEP LEARNING PRESENTES EN ESTE ARCHIVO
 - BACKPROPAGATION: loss.backward() calcula ∂L/∂w para cada peso; optimizer.step()
   actualiza los pesos usando Adam.
 - LOSS FUNCTION: CrossEntropyLoss = Softmax + NLLLoss, ideal para clasificación
-  multiclase (3 patologías agrícolas).
+  multiclase (14 patologías agrícolas).
 - ÉPOCAS Y BATCHES: Bucle externo = épocas (pasadas completas por el dataset);
   bucle interno = mini-batches de 32 muestras.
 =============================================================================
@@ -138,7 +138,7 @@ transform = transforms.Compose([
 # Cargar dataset usando ImageFolder de torchvision.
 # ImageFolder espera subdirectorios por clase: data/Oidio_Vid/, data/Planta_Sana/, etc.
 # NOTA CRÍTICA: ImageFolder asigna etiquetas en ORDEN ALFABÉTICO de los subdirectorios.
-# Orden resultante: 0=Oidio_Vid, 1=Planta_Sana, 2=Tizon_Tardio_Papa.
+# Orden resultante (14 clases): 0=Arana_Roja_Tomate, 1=Mancha_Bact_Pimiento, ... 13=Virus_Rizo_Tomate.
 # Este orden DEBE coincidir con CLASS_NAMES en api_vision.py para que la predicción sea correcta.
 dataset = datasets.ImageFolder(root=DATA_DIR, transform=transform)
 
@@ -176,18 +176,18 @@ class AgricolaCNN(nn.Module):
     │    Shape: [B, 32, 16, 16] → [B, 8192]                              │
     │                                                                     │
     │  ► MLP (Clasificador Fully Connected):                              │
-    │    Linear(8192→64) → ReLU → Linear(64→3)                           │
-    │    Shape: [B, 8192] → [B, 64] → [B, 64] → [B, 3]                  │
+    │    Linear(8192→256) → ReLU → Linear(256→14)                        │
+    │    Shape: [B, 8192] → [B, 256] → [B, 256] → [B, 14]               │
     │                                                                     │
-    │  OUTPUT: Tensor [B, 3]  (logits crudos, una puntuación por clase)   │
+    │  OUTPUT: Tensor [B, 14]  (logits crudos, una puntuación por clase)  │
     └─────────────────────────────────────────────────────────────────────┘
 
     PARÁMETROS ENTRENABLES TOTALES:
     - conv1: (3×16×3×3) + 16 bias = 448
     - conv2: (16×32×3×3) + 32 bias = 4,640
-    - fc1: (8192×64) + 64 bias = 524,352
-    - fc2: (64×3) + 3 bias = 195
-    - TOTAL: ~529,635 parámetros
+    - fc1: (8192×256) + 256 bias = 2,097,408
+    - fc2: (256×14) + 14 bias = 3,598
+    - TOTAL: ~2,106,094 parámetros
     """
 
     def __init__(self, num_classes=3):
@@ -234,13 +234,12 @@ class AgricolaCNN(nn.Module):
         # Después de 2 bloques conv+pool, el tensor tiene shape [B, 32, 16, 16].
         # Se aplana (flatten) a [B, 32*16*16] = [B, 8192] para alimentar capas lineales.
         #
-        # ─── HIPERPARÁMETRO: hidden_layer_sizes = (64,) ───
-        # fc1 comprime 8192 features → 64 neuronas. Esta capa oculta actúa como
+        # ─── HIPERPARÁMETRO: hidden_layer_sizes = (256,) ───
+        # fc1 comprime 8192 features → 256 neuronas. Esta capa oculta actúa como
         # "cuello de botella" que fuerza al modelo a aprender una representación
-        # compacta y discriminativa. 64 neuronas ofrecen capacidad suficiente para
-        # separar 3 clases sin sobreajustar en un dataset de ~2000 imágenes.
+        # compacta y discriminativa. 256 neuronas ofrecen capacidad suficiente para
+        # separar 14 clases sin sobreajustar en un dataset de ~11.500 imágenes.
         # Dimensión calculada: IMG_SIZE=64 → pool1(32) → pool2(16), entonces 32*16*16=8192.
-        # fc1 aumentado a 256 neuronas (era 64) para mayor capacidad con 14 clases.
         self.fc1 = nn.Linear(32 * 16 * 16, 256)
         self.relu3 = nn.ReLU()
 
@@ -260,7 +259,7 @@ class AgricolaCNN(nn.Module):
         Flujo de transformación del tensor:
             [B, 3, 64, 64] → conv1 → [B, 16, 64, 64] → relu → pool → [B, 16, 32, 32]
             → conv2 → [B, 32, 32, 32] → relu → pool → [B, 32, 16, 16]
-            → flatten → [B, 8192] → fc1 → [B, 64] → relu → fc2 → [B, 3]
+            → flatten → [B, 8192] → fc1 → [B, 256] → relu → fc2 → [B, 14]
         """
         # Bloque 1: Convolución → Activación no-lineal → Submuestreo
         x = self.pool1(self.relu1(self.conv1(x)))
@@ -275,9 +274,9 @@ class AgricolaCNN(nn.Module):
         # y el MLP (opera sobre vectores 1D).
         x = x.view(x.size(0), -1) # Flatten
 
-        # MLP: Compresión a representación de 64 dims + activación
+        # MLP: Compresión a representación de 256 dims + activación
         x = self.relu3(self.fc1(x))
-        # Capa de salida: 64 → 3 logits (sin activación, CrossEntropyLoss la aplica)
+        # Capa de salida: 256 → 14 logits (sin activación, CrossEntropyLoss la aplica)
         x = self.fc2(x)
         return x
 
@@ -291,7 +290,7 @@ def train_model():
     Estructura del entrenamiento:
     ┌─ Época (BUCLE EXTERNO): for epoch in range(EPOCHS)
     │   Una época = 1 pasada completa por TODAS las muestras del dataset.
-    │   Con ~2000 imágenes y batch_size=32, cada época tiene ~63 iteraciones.
+    │   Con ~11.500 imágenes y batch_size=32, cada época tiene ~360 iteraciones.
     │
     │   ┌─ Batch/Lote (BUCLE INTERNO): for inputs, labels in dataloader
     │   │   Un batch = subconjunto de 32 muestras procesadas en paralelo.
@@ -301,13 +300,13 @@ def train_model():
     """
     print(f"\nIniciando entrenamiento por {EPOCHS} épocas...")
 
-    # Instanciar el modelo con 3 neuronas de salida (una por clase agrícola)
+    # Instanciar el modelo con 14 neuronas de salida (una por clase agrícola)
     model = AgricolaCNN(num_classes=len(CLASSES))
 
     # ─── FUNCIÓN DE PÉRDIDA: CrossEntropyLoss ───
     # Combina LogSoftmax + NLLLoss (Negative Log-Likelihood).
     # Fórmula: L = -log(P(clase_correcta)), donde P = softmax(logits).
-    # Ideal para clasificación multiclase (3 patologías). Penaliza más cuando
+    # Ideal para clasificación multiclase (14 patologías). Penaliza más cuando
     # el modelo asigna BAJA probabilidad a la clase verdadera.
     # En contexto agrícola: un diagnóstico equivocado de "Planta_Sana" cuando hay
     # Tizón produciría una pérdida alta, forzando al modelo a ser cauteloso.
@@ -371,7 +370,7 @@ def train_model():
             # optimizer.step() aplica la regla de actualización de Adam:
             #   w_new = w_old - lr * m̂/(√v̂ + ε)
             # donde m̂ y v̂ son los momentos corregidos del gradiente.
-            # Modifica in-place los ~529,635 parámetros de la red.
+            # Modifica in-place los ~2,106,094 parámetros de la red.
             optimizer.step()           # Actualizar pesos
             
             running_loss += loss.item()
